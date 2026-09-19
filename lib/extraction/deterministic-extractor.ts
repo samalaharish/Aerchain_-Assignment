@@ -1,6 +1,5 @@
 import type { ProcurementEvent, Vendor } from "@/lib/domain/types";
 import { evidenceFromLocation, fallbackEvidence } from "@/lib/extraction/evidence";
-import { buildDemoQuoteLines } from "@/lib/extraction/demo-quote-fixtures";
 import type { ExtractedQuoteLine, VendorQuoteExtraction } from "@/lib/extraction/schemas";
 import type { ParsedDocument, ParsedRow } from "@/lib/ingestion/types";
 
@@ -74,8 +73,7 @@ export function extractStructuredQuoteDeterministically(input: {
       warnings: ["No quote found in deterministic structured workbook parse."]
     };
   });
-  const fixtureLineItems = buildDemoQuoteLines({ event, vendor, parsedDocument });
-  const lineItems = parsedLineItems.map((line, index) => line.status === "NOT_QUOTED" ? fixtureLineItems[index] : line);
+  const lineItems = parsedLineItems;
 
   const qualityEvidence = parsedDocument.sourceLocations.find((location) => location.text?.toLowerCase().includes("iso"));
 
