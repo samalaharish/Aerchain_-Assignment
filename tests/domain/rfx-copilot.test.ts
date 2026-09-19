@@ -1,11 +1,15 @@
 import { mkdtemp, rm } from "fs/promises";
 import os from "os";
 import path from "path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { generateRfxDraft } from "@/lib/rfx/copilot";
 import { readReviewedRfxDraft, writeReviewedRfxDraft } from "@/lib/rfx/draft-store";
 
 describe("RFx copilot", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("turns a natural-language sourcing request into a structured editable draft in demo mode", async () => {
     const draft = await generateRfxDraft({
       prompt: "I need corrugated packaging for our West India fulfillment network. We need around 30 carton SKUs. Ask suppliers for pricing, MOQ, lead time, freight and quality information.",
@@ -54,5 +58,88 @@ describe("RFx copilot", () => {
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
+  });
+
+  it("requests and validates the strict OpenAI RFxDraft contract for a 30-line draft", async () => {
+    const openAiDraft = {
+      status: "DRAFT_READY",
+      provider: "openai",
+      model: "gpt-4o-mini",
+      scope: "Corrugated packaging for West India fulfillment network.",
+      lineItems: Array.from({ length: 30 }, (_, index) => ({
+        lineNumber: index + 1,
+        description: `Corrugated carton SKU ${index + 1}`,
+        quantity: 5000 + index,
+        unit: "piece",
+        specification: `Editable carton specification ${index + 1}`,
+        deliveryLocation: "West India fulfillment network"
+      })),
+      commercialRequirements: ["Provide unit price, MOQ, lead time, freight, payment terms, and quote validity."],
+      questionnaire: ["Confirm quality certification.", "Confirm specification compliance."],
+      deliveryRequirements: ["Deliver to the West India fulfillment network."],
+      quoteTerms: ["Quote each RFx line separately."],
+      assumptions: ["Quantities are editable buyer assumptions until approved."],
+      clarificationQuestions: []
+    };
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as {
+        response_format?: {
+          type?: string;
+          json_schema?: {
+            strict?: boolean;
+            schema?: {
+              properties?: Record<string, { type?: unknown; enum?: unknown; items?: { properties?: Record<string, unknown> } }>;
+            };
+          };
+        };
+      };
+      expect(body.response_format?.type).toBe("json_schema");
+      expect(body.response_format?.json_schema?.strict).toBe(true);
+      expect(body.response_format?.json_schema?.schema?.properties?.status?.enum).toEqual(["DRAFT_READY", "NEEDS_CLARIFICATION"]);
+      expect(body.response_format?.json_schema?.schema?.properties?.commercialRequirements?.type).toBe("array");
+      expect(body.response_format?.json_schema?.schema?.properties?.deliveryRequirements?.type).toBe("array");
+      expect(body.response_format?.json_schema?.schema?.properties?.quoteTerms?.type).toBe("array");
+      expect(body.response_format?.json_schema?.schema?.properties?.assumptions?.type).toBe("array");
+      const lineProperties = body.response_format?.json_schema?.schema?.properties?.lineItems?.items?.properties;
+      expect(lineProperties).toHaveProperty("lineNumber");
+      expect(lineProperties).toHaveProperty("specification");
+      expect(lineProperties).toHaveProperty("deliveryLocation");
+
+      return new Response(JSON.stringify({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify(openAiDraft)
+            }
+          }
+        ]
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const draft = await generateRfxDraft({
+      prompt: "I need corrugated packaging for our West India fulfillment network. We need around 30 carton SKUs. Ask suppliers for pricing, MOQ, lead time, freight and quality information.",
+      env: {
+        OPENAI_API_KEY: "test-key",
+        OPENAI_MODEL: "gpt-4o-mini"
+      }
+    });
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(draft.status).toBe("DRAFT_READY");
+    expect(draft.provider).toBe("openai");
+    expect(draft.lineItems).toHaveLength(30);
+    expect(draft.lineItems[0]).toMatchObject({
+      lineNumber: 1,
+      specification: "Editable carton specification 1",
+      deliveryLocation: "West India fulfillment network"
+    });
+    expect(Array.isArray(draft.commercialRequirements)).toBe(true);
+    expect(Array.isArray(draft.deliveryRequirements)).toBe(true);
+    expect(Array.isArray(draft.quoteTerms)).toBe(true);
+    expect(Array.isArray(draft.assumptions)).toBe(true);
   });
 });
