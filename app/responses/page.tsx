@@ -4,7 +4,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { procurementEvent } from "@/lib/fixtures/procurement-event";
 import { generateExceptionsForEvent } from "@/lib/domain/exceptions";
 import { processSeededVendorDocuments } from "@/lib/ingestion/fixture-processing";
-import { getExtractionProviderMode } from "@/lib/extraction/config";
+import { getExtractionProviderLabel, getExtractionProviderMode } from "@/lib/extraction/config";
 import { buildDemoComparisonDataset } from "@/lib/extraction/comparison-source";
 import { getSupplierCoverage } from "@/lib/domain/analyst-tools";
 
@@ -16,7 +16,7 @@ export default async function ResponsesPage() {
   const dataset = await buildDemoComparisonDataset();
   const coverage = getSupplierCoverage(dataset);
   const providerMode = getExtractionProviderMode();
-  const providerLabel = providerMode === "demo" ? "Prototype - Demo extraction" : "Gemini extraction";
+  const providerLabel = providerMode === "demo" ? "Demo extraction" : `AI extraction - ${getExtractionProviderLabel()}`;
 
   return (
     <AppShell
@@ -59,7 +59,7 @@ export default async function ResponsesPage() {
                 const processingSummary = processing.find((item) => item.vendorId === vendor.id);
                 const supplierCoverage = coverage.find((item) => item.vendorId === vendor.id);
                 const reviewCount = supplierCoverage?.review ?? vendorExceptions.length;
-                const extractionLabel = vendor.id === "vendor-a" ? "Deterministic" : providerMode === "demo" && ["vendor-d", "vendor-e"].includes(vendor.id) ? "Demo extraction" : "Extracted";
+                const extractionLabel = vendor.id === "vendor-a" ? "Deterministic" : providerMode === "demo" && ["vendor-d", "vendor-e"].includes(vendor.id) ? "Demo extraction" : `${getExtractionProviderLabel()} extraction`;
 
                 return (
                   <tr key={vendor.id} className="border-t border-line align-top">

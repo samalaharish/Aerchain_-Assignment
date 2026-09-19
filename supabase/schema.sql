@@ -199,3 +199,11 @@ create table if not exists audit_events (
   details jsonb not null default '{}',
   created_at timestamptz not null default now()
 );
+
+create table if not exists app_state (
+  key text primary key,
+  value jsonb not null,
+  updated_at timestamptz not null default now()
+);
+
+alter table ai_extraction_cache alter column document_id drop not null;

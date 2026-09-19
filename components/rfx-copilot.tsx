@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { StatusBadge } from "@/components/status-badge";
 import type { RfxDraft } from "@/lib/rfx/copilot";
+import type { RfxWorkflowState } from "@/lib/rfx/workflow-state";
 
 const defaultPrompt = "I need corrugated packaging for our West India fulfillment network. We need around 30 carton SKUs. Ask suppliers for pricing, MOQ, lead time, freight and quality information.";
 type DraftLine = RfxDraft["lineItems"][number];
@@ -14,13 +16,23 @@ export function RfxCopilot() {
   const [savePending, setSavePending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [draftSaved, setDraftSaved] = useState(false);
+  const [submitPending, setSubmitPending] = useState(false);
+  const [submission, setSubmission] = useState<RfxWorkflowState | null>(null);
 
   useEffect(() => {
     let active = true;
-    fetch("/api/rfx-draft")
-      .then((response) => response.ok ? response.json() : null)
-      .then((payload: { draft?: RfxDraft | null } | null) => {
-        if (active && payload?.draft) setDraft(payload.draft);
+    Promise.all([
+      fetch("/api/rfx-draft").then((response) => response.ok ? response.json() : null),
+      fetch("/api/rfx-state").then((response) => response.ok ? response.json() : null)
+    ])
+      .then(([draftPayload, statePayload]: [{ draft?: RfxDraft | null } | null, { state?: RfxWorkflowState } | null]) => {
+        if (!active) return;
+        if (draftPayload?.draft) {
+          setDraft(draftPayload.draft);
+          setDraftSaved(true);
+        }
+        if (statePayload?.state?.status === "SENT") setSubmission(statePayload.state);
       })
       .catch(() => undefined);
     return () => {
@@ -40,6 +52,8 @@ export function RfxCopilot() {
       });
       if (!response.ok) throw new Error(await response.text());
       setDraft(await response.json() as RfxDraft);
+      setDraftSaved(false);
+      setSubmission(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "RFx copilot failed.");
     } finally {
@@ -61,7 +75,8 @@ export function RfxCopilot() {
       if (!response.ok) throw new Error(await response.text());
       const payload = await response.json() as { draft: RfxDraft };
       setDraft(payload.draft);
-      setSaveMessage("Reviewed RFx draft saved. Downstream RFx review and comparison will use this version.");
+      setDraftSaved(true);
+      setSaveMessage("RFx draft saved. Review is complete enough to submit to suppliers.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save the reviewed RFx draft.");
     } finally {
@@ -69,9 +84,28 @@ export function RfxCopilot() {
     }
   }
 
+  async function submitRfx() {
+    setSubmitPending(true);
+    setError(null);
+    setSaveMessage(null);
+    try {
+      const response = await fetch("/api/rfx-submit", { method: "POST" });
+      if (!response.ok) throw new Error(await response.text());
+      const payload = await response.json() as { state: RfxWorkflowState };
+      setSubmission(payload.state);
+      setSaveMessage("RFx submitted to suppliers. Email delivery is simulated for this prototype.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not submit the RFx.");
+    } finally {
+      setSubmitPending(false);
+    }
+  }
+
   function updateDraft(patch: Partial<RfxDraft>) {
     setDraft((current) => current ? { ...current, ...patch } : current);
     setSaveMessage(null);
+    setDraftSaved(false);
+    setSubmission(null);
   }
 
   function updateLine(lineNumber: number, patch: Partial<DraftLine>) {
@@ -80,6 +114,8 @@ export function RfxCopilot() {
       lineItems: current.lineItems.map((line) => line.lineNumber === lineNumber ? { ...line, ...patch } : line)
     } : current);
     setSaveMessage(null);
+    setDraftSaved(false);
+    setSubmission(null);
   }
 
   function addLine() {
@@ -106,6 +142,8 @@ export function RfxCopilot() {
       };
     });
     setSaveMessage(null);
+    setDraftSaved(false);
+    setSubmission(null);
   }
 
   function removeLine(lineNumber: number) {
@@ -114,7 +152,12 @@ export function RfxCopilot() {
       lineItems: current.lineItems.filter((line) => line.lineNumber !== lineNumber)
     } : current);
     setSaveMessage(null);
+    setDraftSaved(false);
+    setSubmission(null);
   }
+
+  const validation = draft ? validateDraft(draft) : [];
+  const hasBlockedValidation = validation.some((item) => item.state === "BLOCKED");
 
   return (
     <div className="grid gap-5">
@@ -154,7 +197,10 @@ export function RfxCopilot() {
                 Provider: {draft.provider === "openai" ? `OpenAI (${draft.model})` : "Demo copilot - simulated draft"}
               </p>
             </div>
-            <StatusBadge status={draft.status === "DRAFT_READY" ? "Draft ready" : "Needs clarification"} tone={draft.status === "DRAFT_READY" ? "success" : "warning"} />
+            <div className="flex flex-wrap gap-2">
+              <StatusBadge status={draft.status === "DRAFT_READY" ? "Draft ready" : "Needs clarification"} tone={draft.status === "DRAFT_READY" ? "success" : "warning"} />
+              <StatusBadge status="Buyer review required" tone="warning" />
+            </div>
           </div>
 
           {draft.clarificationQuestions.length > 0 && (
@@ -288,22 +334,106 @@ export function RfxCopilot() {
             <EditableSummary title="Quote terms" items={draft.quoteTerms} onChange={(items) => updateDraft({ quoteTerms: items })} />
           </div>
 
+          <section className="mt-5 rounded-md border border-line bg-white p-4">
+            <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+              <div>
+                <h3 className="font-semibold">RFx validation</h3>
+                <p className="text-sm text-muted">Checks are calculated from the structured RFx draft before supplier submission.</p>
+              </div>
+              <StatusBadge status={hasBlockedValidation ? "Blocked" : validation.some((item) => item.state === "REVIEW") ? "Review" : "Pass"} tone={hasBlockedValidation ? "danger" : validation.some((item) => item.state === "REVIEW") ? "warning" : "success"} />
+            </div>
+            <div className="mt-4 grid gap-2 md:grid-cols-2">
+              {validation.map((item) => (
+                <div key={item.label} className="flex items-center justify-between gap-3 rounded-md border border-line bg-panel p-3 text-sm">
+                  <span>{item.label}</span>
+                  <StatusBadge status={item.state} tone={item.state === "PASS" ? "success" : item.state === "BLOCKED" ? "danger" : "warning"} />
+                </div>
+              ))}
+            </div>
+          </section>
+
           <div className="mt-5 flex flex-col gap-3 rounded-md border border-line bg-panel p-4 md:flex-row md:items-center md:justify-between">
             <div>
               <h3 className="font-semibold">Buyer review</h3>
-              <p className="text-sm text-muted">Save only after confirming assumptions, quantities, terms, and questionnaire requirements.</p>
+              <p className="text-sm text-muted">Save the reviewed draft first. Submission to suppliers is a separate buyer action.</p>
             </div>
-            <button
-              type="button"
-              onClick={saveReviewedDraft}
-              disabled={savePending || draft.status !== "DRAFT_READY" || draft.lineItems.length === 0}
-              className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:opacity-50"
-            >
-              {savePending ? "Saving..." : "Save reviewed draft"}
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={saveReviewedDraft}
+                disabled={savePending || draft.status !== "DRAFT_READY" || draft.lineItems.length === 0 || hasBlockedValidation}
+                className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:opacity-50"
+              >
+                {savePending ? "Saving..." : "Save RFx draft"}
+              </button>
+              {draftSaved && (
+                <button
+                  type="button"
+                  onClick={submitRfx}
+                  disabled={submitPending || hasBlockedValidation}
+                  className="rounded-md border border-accent px-4 py-2 text-sm font-semibold text-accent hover:bg-accent hover:text-white disabled:opacity-50"
+                >
+                  {submitPending ? "Submitting..." : "Submit RFx to suppliers"}
+                </button>
+              )}
+            </div>
           </div>
+
+          {submission && (
+            <section className="mt-5 rounded-md border border-emerald-200 bg-emerald-50 p-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-emerald-950">RFx submitted</h3>
+                  <p className="mt-1 text-sm text-emerald-900">Email delivery is simulated for this prototype.</p>
+                </div>
+                <StatusBadge status="Sent" tone="success" />
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-4">
+                <Fact label="RFx ID" value={submission.rfxId} />
+                <Fact label="Supplier count" value={String(submission.supplierCount)} />
+                <Fact label="Line count" value={String(submission.lineCount)} />
+                <Fact label="Channel" value={submission.channel ?? "Email"} />
+              </div>
+              <div className="mt-4 grid gap-2 md:grid-cols-5">
+                {submission.suppliers.map((supplier) => (
+                  <div key={supplier.vendorId} className="rounded-md border border-emerald-200 bg-white p-3">
+                    <div className="text-sm font-semibold">{supplier.vendorName}</div>
+                    <div className="mt-1 text-xs text-emerald-800">{supplier.status}</div>
+                  </div>
+                ))}
+              </div>
+              <Link href="/responses" className="mt-4 inline-flex rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-teal-800">
+                View supplier responses
+              </Link>
+            </section>
+          )}
         </section>
       )}
+    </div>
+  );
+}
+
+type ValidationState = "PASS" | "REVIEW" | "BLOCKED";
+
+function validateDraft(draft: RfxDraft): Array<{ label: string; state: ValidationState }> {
+  const hasLines = draft.lineItems.length > 0;
+  return [
+    { label: "Line items present", state: hasLines ? "PASS" : "BLOCKED" },
+    { label: "Quantities present", state: hasLines && draft.lineItems.every((line) => line.quantity !== null) ? "PASS" : "BLOCKED" },
+    { label: "Specifications present", state: hasLines && draft.lineItems.every((line) => Boolean(line.specification)) ? "PASS" : "BLOCKED" },
+    { label: "Questionnaire configured", state: draft.questionnaire.length > 0 ? "PASS" : "REVIEW" },
+    { label: "Commercial requirements configured", state: draft.commercialRequirements.length > 0 ? "PASS" : "REVIEW" },
+    { label: "Delivery requirements configured", state: draft.deliveryRequirements.length > 0 ? "PASS" : "REVIEW" },
+    { label: "Quote terms configured", state: draft.quoteTerms.length > 0 ? "PASS" : "REVIEW" },
+    { label: "Assumptions requiring buyer confirmation", state: draft.assumptions.length > 0 ? "REVIEW" : "PASS" }
+  ];
+}
+
+function Fact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-emerald-200 bg-white p-3">
+      <div className="text-xs font-semibold uppercase tracking-wide text-emerald-800">{label}</div>
+      <div className="mt-1 text-sm font-semibold text-emerald-950">{value}</div>
     </div>
   );
 }

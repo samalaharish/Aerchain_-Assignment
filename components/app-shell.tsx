@@ -1,5 +1,6 @@
 import { WorkflowNav } from "@/components/workflow-nav";
-import { getExtractionProviderMode } from "@/lib/extraction/config";
+import { getExtractionProviderLabel, getExtractionProviderMode } from "@/lib/extraction/config";
+import { readRfxWorkflowState, workflowStatusLabel } from "@/lib/rfx/workflow-state";
 
 type AppShellProps = {
   title: string;
@@ -8,12 +9,14 @@ type AppShellProps = {
   children: React.ReactNode;
 };
 
-export function AppShell({ title, eyebrow, description, children }: AppShellProps) {
+export async function AppShell({ title, eyebrow, description, children }: AppShellProps) {
   const isDemoMode = getExtractionProviderMode() === "demo";
+  const providerLabel = `${isDemoMode ? "Demo extraction" : "AI extraction"} · ${getExtractionProviderLabel()}`;
+  const workflowState = await readRfxWorkflowState();
 
   return (
     <div className="min-h-screen">
-      <WorkflowNav />
+      <WorkflowNav statusLabel={workflowStatusLabel(workflowState.status)} providerLabel={providerLabel} />
       <main className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
         {isDemoMode && (
           <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">

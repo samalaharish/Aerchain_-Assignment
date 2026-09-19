@@ -10,6 +10,7 @@ import { decideExtractionPath } from "@/lib/extraction/escalation";
 import { selectExtractionProvider } from "@/lib/extraction/config";
 import { FileExtractionCache } from "@/lib/extraction/file-cache";
 import { createRunId, FileExtractionRunStore, type ExtractionRunStore } from "@/lib/extraction/run-store";
+import { createSupabaseExtractionCache, createSupabaseExtractionRunStore, persistExtractionResultToSupabase } from "@/lib/extraction/supabase-persistence";
 import type { QuoteExtractionProvider } from "@/lib/extraction/provider";
 import type { VendorQuoteExtraction } from "@/lib/extraction/schemas";
 import { validateVendorQuoteExtraction } from "@/lib/extraction/schemas";
@@ -110,6 +111,18 @@ export async function extractFromParsedDocument(input: {
       extractStructuredQuoteDeterministically({ event: procurementEvent, vendor, parsedDocument: input.parsedDocument }),
       validLineIds
     );
+    try {
+      await persistExtractionResultToSupabase({
+        provider: "deterministic",
+        model: "parser-first",
+        promptVersion: "deterministic-parse",
+        schemaVersion: EXTRACTION_SCHEMA_VERSION,
+        contentHash: input.parsedDocument.contentHash,
+        rfxVersion: procurementEvent.rfx.id
+      }, extraction);
+    } catch (error) {
+      console.warn("Supabase deterministic extraction persistence failed.", error);
+    }
     return recordAndReturn(input.runStore, {
       documentId: input.parsedDocument.documentId,
       vendorId: vendor.id,
@@ -151,8 +164,8 @@ export async function extractFromParsedDocument(input: {
     rfxVersion: procurementEvent.rfx.id
   };
   const cacheKey = createExtractionCacheKey(cacheInput);
-  const cacheStore = input.cache ?? (input.provider ? new MemoryExtractionCache() : defaultExtractionCache);
-  const runStore = input.runStore ?? defaultRunStore;
+  const cacheStore = input.cache ?? (input.provider ? new MemoryExtractionCache() : createSupabaseExtractionCache() ?? defaultExtractionCache);
+  const runStore = input.runStore ?? createSupabaseExtractionRunStore() ?? defaultRunStore;
   const cached = await cacheStore.get(cacheInput);
   if (cached) {
     return recordAndReturn(runStore, {
@@ -256,7 +269,7 @@ export async function extractFromParsedDocument(input: {
 
 async function recordAndReturn(runStore: ExtractionRunStore | undefined, result: ExtractionWorkflowResult): Promise<ExtractionWorkflowResult> {
   const store = runStore ?? defaultRunStore;
-  await store.record({
+  const runLog = {
     runId: createRunId({
       documentId: result.documentId,
       cacheKey: result.cacheKey,
@@ -280,6 +293,13 @@ async function recordAndReturn(runStore: ExtractionRunStore | undefined, result:
     error: result.run.error,
     startedAt: result.run.startedAt,
     completedAt: result.run.completedAt
-  });
+  };
+  try {
+    await store.record(runLog);
+  } catch (error) {
+    if (runStore) throw error;
+    console.warn("Primary extraction run persistence failed; using local fallback.", error);
+    await defaultRunStore.record(runLog);
+  }
   return result;
 }

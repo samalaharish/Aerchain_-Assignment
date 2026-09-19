@@ -24,7 +24,12 @@ const stageItems = [
   { href: "/approval", label: "Decision" }
 ];
 
-export function WorkflowNav() {
+type WorkflowNavProps = {
+  statusLabel: string;
+  providerLabel: string;
+};
+
+export function WorkflowNav({ statusLabel, providerLabel }: WorkflowNavProps) {
   const pathname = usePathname();
 
   return (
@@ -36,8 +41,8 @@ export function WorkflowNav() {
             <div className="text-sm font-medium text-muted">Corrugated Packaging RFx · 5 suppliers · 30 lines</div>
           </div>
           <div className="hidden items-center gap-2 md:flex">
-            <span className="rounded-md border border-line bg-panel px-3 py-2 text-xs font-semibold text-muted">Analysis in progress</span>
-            <span className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">Prototype · Demo extraction</span>
+            <span className="rounded-md border border-line bg-panel px-3 py-2 text-xs font-semibold text-muted">{statusLabel}</span>
+            <span className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">{providerLabel}</span>
           </div>
         </div>
         <div className="flex gap-2 overflow-x-auto pb-1">

@@ -27,7 +27,9 @@ export default async function ExtractionReviewPage({ params }: PageProps) {
     ? "Demo extraction - simulated provider"
     : result.run.provider === "gemini"
       ? "AI extraction - provider: Gemini"
-      : "Deterministic extraction";
+      : result.run.provider === "openai"
+        ? "AI extraction - provider: OpenAI"
+        : "Deterministic extraction";
 
   return (
     <AppShell
