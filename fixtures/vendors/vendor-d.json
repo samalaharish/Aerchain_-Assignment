@@ -1,0 +1,7 @@
+{
+  "vendor": "Delta Fibreboard",
+  "format": "AMBIGUOUS_TEXT",
+  "fixturePurpose": "Ambiguous terminology and quality failure",
+  "messyConditions": ["different product terminology", "unmapped line item", "unknown unit", "quality failure", "USD quotes"],
+  "documentHash": "seeded-response-d-hash"
+}

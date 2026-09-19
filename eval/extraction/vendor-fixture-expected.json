@@ -1,0 +1,27 @@
+{
+  "dataset": "aerchain-corrugated-goal-3",
+  "version": "v1",
+  "cases": [
+    {
+      "documentId": "doc-a",
+      "expectedPath": "DETERMINISTIC",
+      "expectedQuotedLines": ["line-01", "line-02", "line-03", "line-04", "line-05", "line-06", "line-07", "line-08"],
+      "expectedNotQuotedCount": 22,
+      "importantFields": {
+        "line-01": { "unitPrice": 780, "currency": "INR", "quotedUnit": "per 100 pcs", "freight": "included" }
+      }
+    },
+    {
+      "documentId": "doc-d",
+      "expectedPath": "AI_GEMINI",
+      "expectedQuotedLines": ["line-21", "line-22", "line-23", "line-24", "line-25"],
+      "expectedAmbiguities": ["unmapped special fruit tray", "quality failure", "unknown unit"]
+    },
+    {
+      "documentId": "doc-e",
+      "expectedPath": "AI_GEMINI",
+      "expectedQuotedLines": ["line-27", "line-28", "line-29", "line-30"],
+      "expectedAmbiguities": ["unknown pack size", "missing currency", "missing lead time"]
+    }
+  ]
+}

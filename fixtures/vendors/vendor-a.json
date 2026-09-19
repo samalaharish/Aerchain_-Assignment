@@ -1,0 +1,7 @@
+{
+  "vendor": "Alpha Packwell",
+  "format": "EXCEL",
+  "fixturePurpose": "Clean Excel-style structured response",
+  "messyConditions": ["prices per 100 pieces", "freight included"],
+  "documentHash": "seeded-response-a-hash"
+}

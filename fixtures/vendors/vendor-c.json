@@ -1,0 +1,7 @@
+{
+  "vendor": "CartonCraft Works",
+  "format": "DOCX_EMAIL",
+  "fixturePurpose": "DOCX/email-style partial response",
+  "messyConditions": ["missing price", "missing currency", "missing freight", "missing lead time", "partial response"],
+  "documentHash": "seeded-response-c-hash"
+}

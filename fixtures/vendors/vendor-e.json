@@ -1,0 +1,7 @@
+{
+  "vendor": "Eastern Box Makers",
+  "format": "SCANNED_IMAGE",
+  "fixturePurpose": "Scanned/image-style rate card",
+  "messyConditions": ["unknown pack size", "missing currency", "missing freight", "missing lead time", "low confidence fixture metadata"],
+  "documentHash": "seeded-response-e-hash"
+}

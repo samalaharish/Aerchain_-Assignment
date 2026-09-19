@@ -1,0 +1,7 @@
+{
+  "vendor": "Bharat Corrugates",
+  "format": "PDF",
+  "fixturePurpose": "PDF-style quotation with freight footnotes",
+  "messyConditions": ["freight ambiguity", "missing lead time", "alternate row labels"],
+  "documentHash": "seeded-response-b-hash"
+}
