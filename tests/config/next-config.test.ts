@@ -21,4 +21,19 @@ describe("Next production file tracing", () => {
     expect(includes?.["/responses/[documentId]"]).toContain("./fixtures/vendor-responses/**/*");
     expect(includes?.["/api/extractions/[documentId]/run"]).toContain("./fixtures/vendor-responses/**/*");
   });
+
+  it("bundles the PDF.js worker required by server-side PDF parsing", async () => {
+    const configUrl = pathToFileURL(path.join(process.cwd(), "next.config.mjs")).href;
+    const { default: nextConfig } = (await import(configUrl)) as {
+      default: NextConfigWithTracing;
+    };
+
+    const includes = nextConfig.experimental?.outputFileTracingIncludes;
+    const expectedWorkerGlob = "./node_modules/.pnpm/pdfjs-dist@*/node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs";
+
+    expect(includes?.["/dashboard"]).toContain(expectedWorkerGlob);
+    expect(includes?.["/responses"]).toContain(expectedWorkerGlob);
+    expect(includes?.["/comparison"]).toContain(expectedWorkerGlob);
+    expect(includes?.["/api/extractions/[documentId]/run"]).toContain(expectedWorkerGlob);
+  });
 });

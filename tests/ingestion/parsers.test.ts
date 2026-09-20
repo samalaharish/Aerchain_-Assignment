@@ -27,7 +27,13 @@ describe("deterministic parsers", () => {
   });
 
   it("parses PDF text by page where machine-readable text exists", async () => {
-    const result = await processFixture("doc-b", "vendor-b", "vendor-b.pdf", "application/pdf");
+    let result: Awaited<ReturnType<typeof processFixture>>;
+    try {
+      result = await processFixture("doc-b", "vendor-b", "vendor-b.pdf", "application/pdf");
+    } catch (error) {
+      expect(error instanceof Error ? error.message : String(error)).not.toContain("Setting up fake worker failed");
+      throw error;
+    }
 
     expect(result.parsedDocument.parserName).toBe("pdfjs-text");
     expect(result.parsedDocument.processingStatus).toBe("PARSED");
