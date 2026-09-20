@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getAnalystDisplay } from "@/lib/analyst/display";
+import { formatAnalystDisplayValue, getAnalystDisplay } from "@/lib/analyst/display";
 
 describe("analyst display relevance", () => {
   it("does not show generic structured UI for rating-unavailable answers", () => {
@@ -73,5 +73,12 @@ describe("analyst display relevance", () => {
 
     expect(display.showMetrics).toBe(true);
     expect(display.showSecondaryDetails).toBe(true);
+  });
+
+  it("formats object-shaped AI answer fields instead of rendering raw objects", () => {
+    expect(formatAnalystDisplayValue({
+      missingSuppliers: ["Bharat Corrugates"],
+      fullyQuotedSuppliers: ["Alpha Packwell", "CartonCraft Works"]
+    })).toBe("Missing Suppliers: Bharat Corrugates\nFully Quoted Suppliers: Alpha Packwell, CartonCraft Works");
   });
 });

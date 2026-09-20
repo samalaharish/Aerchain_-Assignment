@@ -4,28 +4,28 @@ import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { Bot, Send, UserRound } from "lucide-react";
 import { StatusBadge } from "@/components/status-badge";
-import { getAnalystDisplay, type AnalystDisplayToolSummary } from "@/lib/analyst/display";
+import { formatAnalystDisplayValue, getAnalystDisplay, type AnalystDisplayToolSummary } from "@/lib/analyst/display";
 
 type AnalystMetric = {
-  label: string;
-  value: string;
+  label: unknown;
+  value: unknown;
 };
 
 type AnalystEvidence = {
-  label: string;
-  detail: string;
+  label: unknown;
+  detail: unknown;
   href: string;
 };
 
 type AnalystAction = {
-  label: string;
+  label: unknown;
   href: string;
 };
 
 type AnalystResponse = {
-  title: string;
-  answer: string;
-  caveat: string | null;
+  title: unknown;
+  answer: unknown;
+  caveat: unknown | null;
   metrics: AnalystMetric[];
   evidence: AnalystEvidence[];
   actions: AnalystAction[];
@@ -87,7 +87,7 @@ export function AnalystChat() {
     const history: Array<{ role: "user" | "assistant"; content: string }> = [];
     for (const message of messages) {
       if (message.role === "user") history.push({ role: "user", content: message.content });
-      else if (message.kind === "answer") history.push({ role: "assistant", content: `${message.response.title}: ${message.response.answer}` });
+      else if (message.kind === "answer") history.push({ role: "assistant", content: `${formatAnalystDisplayValue(message.response.title)}: ${formatAnalystDisplayValue(message.response.answer)}` });
       else if (message.kind === "welcome") history.push({ role: "assistant", content: message.content });
     }
     const recentHistory = history.slice(-8);
@@ -250,6 +250,9 @@ function MessageCard({ message, onRetry }: { message: ChatMessage; onRetry: (que
 
 function AnalystAnswerCard({ response }: { response: AnalystResponse }) {
   const display = getAnalystDisplay(response);
+  const title = formatAnalystDisplayValue(response.title);
+  const answer = formatAnalystDisplayValue(response.answer);
+  const caveat = formatAnalystDisplayValue(response.caveat);
 
   return (
     <div className="flex items-start gap-3 rounded-md border border-line bg-white p-4">
@@ -258,24 +261,24 @@ function AnalystAnswerCard({ response }: { response: AnalystResponse }) {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="text-sm font-semibold">Analyst</div>
-            <h3 className="mt-1 text-lg font-semibold">{response.title}</h3>
+            <h3 className="mt-1 text-lg font-semibold">{title}</h3>
           </div>
           <StatusBadge
             status={response.mode === "openai" ? `OpenAI explanation: ${response.model}` : "Deterministic explanation"}
             tone="success"
           />
         </div>
-        <p className="mt-2 text-sm leading-6 text-muted">{response.answer}</p>
-        {response.caveat && <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">{response.caveat}</p>}
+        <p className="mt-2 whitespace-pre-line text-sm leading-6 text-muted">{answer}</p>
+        {caveat && <p className="mt-3 whitespace-pre-line rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">{caveat}</p>}
 
         {display.showMetrics && (
           <div className="mt-4 overflow-hidden rounded-md border border-line">
             <table className="min-w-full divide-y divide-line text-sm">
               <tbody className="divide-y divide-line bg-panel">
                 {response.metrics.map((metric) => (
-                  <tr key={metric.label}>
-                    <td className="w-1/2 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted">{metric.label}</td>
-                    <td className="px-3 py-2 font-semibold text-ink">{metric.value}</td>
+                  <tr key={`${formatAnalystDisplayValue(metric.label)}-${formatAnalystDisplayValue(metric.value)}`}>
+                    <td className="w-1/2 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted">{formatAnalystDisplayValue(metric.label)}</td>
+                    <td className="whitespace-pre-line px-3 py-2 font-semibold text-ink">{formatAnalystDisplayValue(metric.value)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -292,9 +295,9 @@ function AnalystAnswerCard({ response }: { response: AnalystResponse }) {
                   <h4 className="text-sm font-semibold">Evidence</h4>
                   <div className="mt-2 space-y-2">
                     {response.evidence.map((item) => (
-                      <Link key={`${item.label}-${item.href}`} href={item.href} className="block rounded-md border border-line bg-white p-3 hover:border-accent">
-                        <div className="text-sm font-semibold">{item.label}</div>
-                        <div className="mt-1 text-xs text-muted">{item.detail}</div>
+                      <Link key={`${formatAnalystDisplayValue(item.label)}-${item.href}`} href={item.href} className="block rounded-md border border-line bg-white p-3 hover:border-accent">
+                        <div className="text-sm font-semibold">{formatAnalystDisplayValue(item.label)}</div>
+                        <div className="mt-1 whitespace-pre-line text-xs text-muted">{formatAnalystDisplayValue(item.detail)}</div>
                       </Link>
                     ))}
                   </div>
@@ -307,7 +310,7 @@ function AnalystAnswerCard({ response }: { response: AnalystResponse }) {
                   <div className="mt-2 flex flex-wrap gap-2">
                     {response.actions.map((action) => (
                       <Link key={action.href} href={action.href} className="rounded-md border border-line bg-white px-3 py-2 text-sm font-semibold text-muted hover:border-accent hover:text-accent">
-                        {action.label}
+                        {formatAnalystDisplayValue(action.label)}
                       </Link>
                     ))}
                   </div>
