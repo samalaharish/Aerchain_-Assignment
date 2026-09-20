@@ -1,4 +1,4 @@
-import { readFile } from "fs/promises";
+import { access, readFile } from "fs/promises";
 import path from "path";
 import { describe, expect, it } from "vitest";
 import { ParserCache } from "@/lib/ingestion/cache";
@@ -27,6 +27,7 @@ describe("deterministic parsers", () => {
   });
 
   it("parses PDF text by page where machine-readable text exists", async () => {
+    await expect(access(path.join(process.cwd(), "runtime", "pdfjs", "pdf.worker.mjs"))).resolves.toBeUndefined();
     let result: Awaited<ReturnType<typeof processFixture>>;
     try {
       result = await processFixture("doc-b", "vendor-b", "vendor-b.pdf", "application/pdf");

@@ -3,10 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "prepare:pdf-worker": "node scripts/copy-pdf-worker.mjs",
+    "predev": "npm run prepare:pdf-worker",
     "dev": "next dev",
+    "prebuild": "npm run prepare:pdf-worker",
     "build": "next build",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
+    "pretest": "npm run prepare:pdf-worker",
     "test": "vitest run"
   },
   "dependencies": {

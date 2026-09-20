@@ -29,11 +29,13 @@ describe("Next production file tracing", () => {
     };
 
     const includes = nextConfig.experimental?.outputFileTracingIncludes;
-    const expectedWorkerGlob = "./node_modules/.pnpm/pdfjs-dist@*/node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs";
+    const expectedWorkerGlob = "./runtime/pdfjs/pdf.worker.mjs";
 
     expect(includes?.["/dashboard"]).toContain(expectedWorkerGlob);
     expect(includes?.["/responses"]).toContain(expectedWorkerGlob);
     expect(includes?.["/comparison"]).toContain(expectedWorkerGlob);
     expect(includes?.["/api/extractions/[documentId]/run"]).toContain(expectedWorkerGlob);
+    expect(JSON.stringify(includes)).not.toContain("node_modules/.pnpm/pdfjs-dist");
+    expect(JSON.stringify(includes)).not.toContain("node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs");
   });
 });

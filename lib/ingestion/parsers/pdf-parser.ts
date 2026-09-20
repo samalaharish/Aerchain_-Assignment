@@ -1,4 +1,6 @@
 import type { DocumentParser, ParsedPage, SourceLocation } from "@/lib/ingestion/types";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 export const pdfParser: DocumentParser = {
   name: "pdfjs-text",
@@ -6,6 +8,7 @@ export const pdfParser: DocumentParser = {
   supports: ["PDF"],
   async parse({ metadata, bytes }) {
     const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(path.join(process.cwd(), "runtime", "pdfjs", "pdf.worker.mjs")).href;
     const documentInit = { data: new Uint8Array(bytes), disableWorker: true } as unknown as Parameters<typeof pdfjs.getDocument>[0];
     const loadingTask = pdfjs.getDocument(documentInit);
     const pdf = await loadingTask.promise;

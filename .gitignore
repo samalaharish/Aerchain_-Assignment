@@ -4,6 +4,7 @@ out/
 dist/
 coverage/
 .cache/
+runtime/pdfjs/pdf.worker.mjs
 *.tsbuildinfo
 .env
 .env*.local

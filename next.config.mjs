@@ -1,9 +1,6 @@
 /** @type {import('next').NextConfig} */
 const vendorResponseFixtures = ["./fixtures/vendor-responses/**/*"];
-const pdfJsServerRuntimeAssets = [
-  "./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
-  "./node_modules/.pnpm/pdfjs-dist@*/node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs"
-];
+const pdfJsServerRuntimeAssets = ["./runtime/pdfjs/pdf.worker.mjs"];
 const procurementWorkflowAssets = [...vendorResponseFixtures, ...pdfJsServerRuntimeAssets];
 
 const nextConfig = {
