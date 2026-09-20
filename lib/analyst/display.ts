@@ -12,27 +12,33 @@ export type AnalystDisplayResponse = {
   toolSummary?: AnalystDisplayToolSummary;
 };
 
-const structuredToolNames = new Set([
+const singleToolTableNames = new Set([
   "supplierCoverage",
   "lowestComparableCost",
   "priceSpread",
-  "exceptions",
-  "qualityApprovedSuppliers",
-  "qualityAndCoverage",
+  "exceptions"
+]);
+
+const scenarioToolNames = new Set([
   "splitAwardScenario",
   "scenarioAnalysis"
 ]);
 
-const textOnlyToolNames = new Set(["ratingAvailability"]);
+const textOnlyToolNames = new Set([
+  "ratingAvailability",
+  "qualityAndCoverage"
+]);
 
 export function getAnalystDisplay(response: AnalystDisplayResponse) {
   const toolNames = getToolNames(response.toolSummary);
-  const hasStructuredTool = toolNames.some((toolName) => structuredToolNames.has(toolName));
+  const uniqueToolNames = Array.from(new Set(toolNames));
   const hasTextOnlyTool = toolNames.some((toolName) => textOnlyToolNames.has(toolName));
-  const showStructured = hasStructuredTool && !hasTextOnlyTool && response.metrics.length > 0;
+  const hasScenarioTool = uniqueToolNames.some((toolName) => scenarioToolNames.has(toolName));
+  const hasSingleTableTool = uniqueToolNames.length === 1 && singleToolTableNames.has(uniqueToolNames[0]);
+  const showStructured = (!hasTextOnlyTool || hasScenarioTool) && response.metrics.length > 0 && (hasSingleTableTool || hasScenarioTool);
 
   return {
-    toolNames,
+    toolNames: uniqueToolNames,
     showMetrics: showStructured,
     showSecondaryDetails: showStructured && (response.evidence.length > 0 || response.actions.length > 0)
   };
