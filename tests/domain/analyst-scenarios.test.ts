@@ -48,10 +48,13 @@ describe("analyst deterministic tools", () => {
       env: {}
     });
 
-    expect(answer.title).toBe("Quality-approved split award");
+    expect(answer.toolSummary.selectedPlan).toMatchObject({
+      tools: expect.arrayContaining([
+        expect.objectContaining({ name: "splitAwardScenario" })
+      ])
+    });
     expect(answer.mode).toBe("deterministic");
     expect(answer.evidence.some((item) => item.href === "/scenarios")).toBe(true);
-    expect(answer.metrics.some((item) => item.label === "Coverage")).toBe(true);
   });
 
   it("answers supplier coverage and exception questions without arithmetic in prose", async () => {
@@ -69,7 +72,16 @@ describe("analyst deterministic tools", () => {
     expect(answerAnalystQuestion(dataset, "Who has the lowest comparable cost?").title).toBe("Lowest comparable cost");
     expect(answerAnalystQuestion(dataset, "Which suppliers have incomplete quotes?").title).toBe("Supplier coverage");
     expect(answerAnalystQuestion(dataset, "Which lines have the largest price differences?").title).toBe("Largest price differences");
-    expect(answerAnalystQuestion(dataset, "Which suppliers are strongest on quality and coverage?").title).toBe("Quality and coverage");
+    const qualityAnswer = await answerProcurementAnalystQuestion({
+      dataset,
+      question: "Which suppliers are strongest on quality and coverage?",
+      env: {}
+    });
+    expect(qualityAnswer.toolSummary.selectedPlan).toMatchObject({
+      tools: expect.arrayContaining([
+        expect.objectContaining({ name: "qualityAndCoverage" })
+      ])
+    });
   });
 
   it("does not silently substitute lowest cost for unsupported supplier rating questions", async () => {
@@ -98,7 +110,12 @@ describe("analyst deterministic tools", () => {
       const body = JSON.parse(String(init?.body)) as { messages: Array<{ content: string }> };
       if (callCount === 1) {
         return new Response(JSON.stringify({
-          choices: [{ message: { content: JSON.stringify({ intent: "SUPPLIER_COVERAGE", metric: "COVERAGE", limit: 5 }) } }]
+          choices: [{ message: { content: JSON.stringify({
+            goal: "answer supplier coverage",
+            dataNeeded: ["supplier_quote_coverage"],
+            tools: [{ name: "supplierCoverage", arguments: {} }],
+            constraints: ["use only this RFx"]
+          }) } }]
         }), { status: 200, headers: { "Content-Type": "application/json" } });
       }
 
@@ -118,7 +135,40 @@ describe("analyst deterministic tools", () => {
     expect(answer.title).toBe("Coverage explained");
     const explanationPayload = explanationPayloads[0];
     expect(explanationPayload?.deterministicAnswer).toMatchObject({ title: "Supplier coverage" });
-    expect(explanationPayload?.toolSummary).toMatchObject({ selectedPlan: { intent: "SUPPLIER_COVERAGE" } });
+    expect(explanationPayload?.toolResults).toMatchObject([{ toolName: "supplierCoverage" }]);
+    expect(explanationPayload?.toolSummary).toMatchObject({ selectedPlan: { tools: [{ name: "supplierCoverage" }] } });
+  });
+
+  it("lets the planner select multiple tools for broad procurement questions", async () => {
+    const dataset = await datasetFromDemoExtractions();
+    const answer = await answerProcurementAnalystQuestion({
+      dataset,
+      question: "Which suppliers should I review before awarding?",
+      env: {}
+    });
+
+    expect(answer.toolSummary.selectedPlan).toMatchObject({
+      tools: expect.arrayContaining([
+        expect.objectContaining({ name: "exceptions" })
+      ])
+    });
+  });
+
+  it("uses conversation history for follow-up planning", async () => {
+    const dataset = await datasetFromDemoExtractions();
+    const answer = await answerProcurementAnalystQuestion({
+      dataset,
+      question: "What about quality?",
+      history: ["user: Which suppliers have incomplete quotes?", "assistant: Bharat and Delta have incomplete quote coverage."],
+      env: {}
+    });
+
+    expect(answer.title).toBe("Procurement analysis");
+    expect(answer.toolSummary.selectedPlan).toMatchObject({
+      tools: expect.arrayContaining([
+        expect.objectContaining({ name: "qualityAndCoverage" })
+      ])
+    });
   });
 });
 

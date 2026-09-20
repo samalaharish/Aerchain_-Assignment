@@ -82,6 +82,13 @@ export function AnalystChat() {
   async function askAnalyst(rawQuestion: string, options: { appendUser: boolean } = { appendUser: true }) {
     const nextQuestion = rawQuestion.trim();
     if (!nextQuestion || isLoading) return;
+    const history: Array<{ role: "user" | "assistant"; content: string }> = [];
+    for (const message of messages) {
+      if (message.role === "user") history.push({ role: "user", content: message.content });
+      else if (message.kind === "answer") history.push({ role: "assistant", content: `${message.response.title}: ${message.response.answer}` });
+      else if (message.kind === "welcome") history.push({ role: "assistant", content: message.content });
+    }
+    const recentHistory = history.slice(-8);
 
     if (options.appendUser) {
       setMessages((current) => [
@@ -96,7 +103,7 @@ export function AnalystChat() {
       const response = await fetch("/api/analyst", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: nextQuestion })
+        body: JSON.stringify({ question: nextQuestion, history: recentHistory })
       });
 
       if (!response.ok) {

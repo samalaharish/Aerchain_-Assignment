@@ -1,7 +1,15 @@
 import { z } from "zod";
-import { answerAnalystPlan, planAnalystQuestionDeterministically, type AnalystAnswer, type AnalystPlan } from "@/lib/domain/analyst-tools";
+import {
+  analystToolRegistry,
+  answerFromToolResults,
+  executeAnalystPlan,
+  planAnalystQuestionDeterministically,
+  type AnalystAnswer,
+  type AnalystPlan,
+  type AnalystToolName,
+  type AnalystToolResult
+} from "@/lib/domain/analyst-tools";
 import type { ComparisonDataset } from "@/lib/domain/comparison";
-import { calculateScenarios } from "@/lib/domain/scenarios";
 
 export type AnalystMode = "deterministic" | "openai";
 
@@ -14,17 +22,20 @@ export type AiAnalystAnswer = AnalystAnswer & {
 export async function answerProcurementAnalystQuestion(input: {
   dataset: ComparisonDataset;
   question: string;
+  history?: string[];
   env?: Record<string, string | undefined>;
 }): Promise<AiAnalystAnswer> {
   const env = input.env ?? process.env;
   const model = env.OPENAI_ANALYST_MODEL ?? env.OPENAI_MODEL ?? "gpt-4o-mini";
-  const plan = env.ANALYST_PROVIDER === "openai" && env.OPENAI_API_KEY
-    ? await planWithOpenAi(input.question, model, env.OPENAI_API_KEY)
-    : planAnalystQuestionDeterministically(input.question);
-  const deterministic = answerAnalystPlan(input.dataset, plan);
-  const toolSummary = buildToolSummary(input.dataset, input.question, deterministic, plan);
+  const openAiEnabled = env.ANALYST_PROVIDER === "openai" && Boolean(env.OPENAI_API_KEY);
+  const plan = openAiEnabled
+    ? await planWithOpenAi(input.question, input.history ?? [], model, env.OPENAI_API_KEY as string)
+    : planAnalystQuestionDeterministically(input.question, input.history);
+  const toolResults = executeAnalystPlan(input.dataset, plan);
+  const deterministic = answerFromToolResults(toolResults);
+  const toolSummary = buildToolSummary(input.dataset, input.question, input.history ?? [], plan, toolResults);
 
-  if (env.ANALYST_PROVIDER !== "openai" || !env.OPENAI_API_KEY) {
+  if (!openAiEnabled) {
     return {
       ...deterministic,
       mode: "deterministic",
@@ -48,8 +59,9 @@ export async function answerProcurementAnalystQuestion(input: {
           role: "system",
           content: [
             "You are a procurement analyst.",
-            "Use only the provided deterministic tool result.",
-            "Do not perform arithmetic or invent supplier data.",
+            "Use only the provided deterministic tool results and evidence.",
+            "Do not perform arithmetic, invent supplier ratings, invent quote coverage, invent prices, or invent evidence.",
+            "If the tool results say data is unavailable, say so plainly.",
             "Return JSON with title, answer, caveat."
           ].join(" ")
         },
@@ -57,7 +69,10 @@ export async function answerProcurementAnalystQuestion(input: {
           role: "user",
           content: JSON.stringify({
             buyerQuestion: input.question,
+            conversationContext: input.history ?? [],
+            plannerResult: plan,
             deterministicAnswer: deterministic,
+            toolResults,
             toolSummary
           })
         }
@@ -85,23 +100,29 @@ export async function answerProcurementAnalystQuestion(input: {
   };
 }
 
+const analystToolNameSchema = z.enum([
+  "supplierCoverage",
+  "lowestComparableCost",
+  "priceSpread",
+  "exceptions",
+  "qualityAndCoverage",
+  "splitAwardScenario",
+  "scenarioAnalysis",
+  "ratingAvailability"
+] satisfies [AnalystToolName, ...AnalystToolName[]]);
+
 const analystPlanSchema = z.object({
-  intent: z.enum([
-    "SUPPLIER_COVERAGE",
-    "LOWEST_COMPARABLE_COST",
-    "PRICE_SPREAD",
-    "EXCEPTIONS",
-    "QUALITY_APPROVED_SUPPLIERS",
-    "SPLIT_AWARD",
-    "SCENARIO_ANALYSIS",
-    "SUPPLIER_RANKING",
-    "UNSUPPORTED"
-  ]),
-  metric: z.enum(["RATING", "COST", "COVERAGE", "QUALITY"]).nullable().optional(),
-  limit: z.number().int().positive().max(10).nullable().optional()
+  goal: z.string(),
+  dataNeeded: z.array(z.string()),
+  tools: z.array(z.object({
+    name: analystToolNameSchema,
+    arguments: z.record(z.unknown()).optional()
+  })).max(4),
+  constraints: z.array(z.string()),
+  unsupportedReason: z.string().nullable().optional()
 });
 
-async function planWithOpenAi(question: string, model: string, apiKey: string): Promise<AnalystPlan> {
+async function planWithOpenAi(question: string, history: string[], model: string, apiKey: string): Promise<AnalystPlan> {
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -116,58 +137,60 @@ async function planWithOpenAi(question: string, model: string, apiKey: string): 
         {
           role: "system",
           content: [
-            "Classify the buyer's procurement question into one allowed intent.",
-            "Allowed intents: SUPPLIER_COVERAGE, LOWEST_COMPARABLE_COST, PRICE_SPREAD, EXCEPTIONS, QUALITY_APPROVED_SUPPLIERS, SPLIT_AWARD, SCENARIO_ANALYSIS, SUPPLIER_RANKING, UNSUPPORTED.",
-            "Use SUPPLIER_RANKING with metric RATING only when the user explicitly asks for rating.",
-            "If the requested analysis is not one of the allowed intents, return UNSUPPORTED.",
-            "Return only JSON with intent, metric, and limit."
+            "Plan procurement analysis by selecting one or more allowed deterministic tools.",
+            "Return only JSON with goal, dataNeeded, tools, constraints, unsupportedReason.",
+            "Do not invent facts. Do not calculate numbers.",
+            "Use ratingAvailability when the user asks for supplier rating because the tool will verify whether rating exists.",
+            "If no available tool can answer the question, return no tools and set unsupportedReason."
           ].join(" ")
         },
-        { role: "user", content: question }
+        {
+          role: "user",
+          content: JSON.stringify({
+            buyerQuestion: question,
+            conversationContext: history.slice(-8),
+            availableTools: analystToolRegistry.map((tool) => ({
+              name: tool.name,
+              description: tool.description,
+              dataProvided: tool.dataProvided
+            }))
+          })
+        }
       ]
     })
   });
 
-  if (!response.ok) return planAnalystQuestionDeterministically(question);
+  if (!response.ok) return planAnalystQuestionDeterministically(question, history);
   const payload = await response.json() as { choices?: Array<{ message?: { content?: string | null } }> };
   const content = payload.choices?.[0]?.message?.content;
-  if (!content) return planAnalystQuestionDeterministically(question);
+  if (!content) return planAnalystQuestionDeterministically(question, history);
   try {
     const parsed = analystPlanSchema.safeParse(JSON.parse(content));
-    return parsed.success ? parsed.data : planAnalystQuestionDeterministically(question);
+    return parsed.success ? parsed.data : planAnalystQuestionDeterministically(question, history);
   } catch {
-    return planAnalystQuestionDeterministically(question);
+    return planAnalystQuestionDeterministically(question, history);
   }
 }
 
-function buildToolSummary(dataset: ComparisonDataset, question: string, answer: AnalystAnswer, plan: AnalystPlan): Record<string, unknown> {
-  const scenarios = calculateScenarios(dataset);
-  const splitQuality = scenarios.find((scenario) => scenario.goal === "QUALITY_APPROVED_ONLY");
+function buildToolSummary(
+  dataset: ComparisonDataset,
+  question: string,
+  history: string[],
+  plan: AnalystPlan,
+  toolResults: AnalystToolResult[]
+): Record<string, unknown> {
   return {
     question,
+    conversationContext: history.slice(-8),
     selectedPlan: plan,
     metrics: dataset.metrics,
-    selectedDeterministicAnswer: answer.title,
-    scenarios: scenarios.map((scenario) => ({
-      id: scenario.id,
-      goal: scenario.goal,
-      status: scenario.status,
-      estimatedCost: scenario.estimatedCost,
-      coverageLines: scenario.coverageLines,
-      supplierCount: scenario.supplierCount,
-      issues: scenario.issues.slice(0, 5)
-    })),
-    qualityApprovedSplitAward: splitQuality
-      ? {
-          coverageLines: splitQuality.coverageLines,
-          supplierCount: splitQuality.supplierCount,
-          estimatedCost: splitQuality.estimatedCost,
-          allocations: splitQuality.allocations.slice(0, 10).map((allocation) => ({
-            lineNumber: allocation.lineNumber,
-            vendorName: allocation.vendorName,
-            landedTotal: allocation.landedTotal
-          }))
-        }
-      : null
+    toolsExecuted: toolResults.map((result) => ({
+      toolName: result.toolName,
+      title: result.title,
+      summary: result.summary,
+      metrics: result.metrics,
+      caveat: result.caveat,
+      evidence: result.evidence
+    }))
   };
 }
