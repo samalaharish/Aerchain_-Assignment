@@ -12,6 +12,23 @@ export type AnalystAnswer = {
   caveat: string | null;
 };
 
+export type AnalystIntent =
+  | "SUPPLIER_COVERAGE"
+  | "LOWEST_COMPARABLE_COST"
+  | "PRICE_SPREAD"
+  | "EXCEPTIONS"
+  | "QUALITY_APPROVED_SUPPLIERS"
+  | "SPLIT_AWARD"
+  | "SCENARIO_ANALYSIS"
+  | "SUPPLIER_RANKING"
+  | "UNSUPPORTED";
+
+export type AnalystPlan = {
+  intent: AnalystIntent;
+  metric?: "RATING" | "COST" | "COVERAGE" | "QUALITY" | null;
+  limit?: number | null;
+};
+
 export function getSupplierCoverage(dataset: ComparisonDataset) {
   return procurementEvent.vendors.map((vendor) => {
     const cells = dataset.lines.flatMap((line) => line.vendors.filter((cell) => cell.vendorId === vendor.id));
@@ -55,12 +72,30 @@ export function getPriceSpreadLines(dataset: ComparisonDataset) {
 }
 
 export function answerAnalystQuestion(dataset: ComparisonDataset, question: string): AnalystAnswer {
+  return answerAnalystPlan(dataset, planAnalystQuestionDeterministically(question));
+}
+
+export function answerAnalystPlan(dataset: ComparisonDataset, plan: AnalystPlan): AnalystAnswer {
+  if (plan.intent === "SPLIT_AWARD" || plan.intent === "SCENARIO_ANALYSIS") return answerQualitySplitAward(dataset);
+  if (plan.intent === "QUALITY_APPROVED_SUPPLIERS") return answerQualityAndCoverage(dataset, plan.limit ?? 5);
+  if (plan.intent === "SUPPLIER_COVERAGE") return answerCoverage(dataset);
+  if (plan.intent === "EXCEPTIONS") return answerExceptions(dataset);
+  if (plan.intent === "PRICE_SPREAD") return answerPriceSpread(dataset);
+  if (plan.intent === "LOWEST_COMPARABLE_COST") return answerLowestComparableCost(dataset);
+  if (plan.intent === "SUPPLIER_RANKING" && plan.metric === "RATING") return answerUnsupportedSupplierRating();
+  return answerUnsupported();
+}
+
+export function planAnalystQuestionDeterministically(question: string): AnalystPlan {
   const normalized = question.toLowerCase();
-  if (normalized.includes("split") || normalized.includes("quality questionnaire") || normalized.includes("quality-approved")) return answerQualitySplitAward(dataset);
-  if (normalized.includes("incomplete") || normalized.includes("coverage")) return answerCoverage(dataset);
-  if (normalized.includes("exception") || normalized.includes("review")) return answerExceptions(dataset);
-  if (normalized.includes("difference") || normalized.includes("spread")) return answerPriceSpread(dataset);
-  return answerLowestComparableCost(dataset);
+  if (normalized.includes("rating") || normalized.includes("rated")) return { intent: "SUPPLIER_RANKING", metric: "RATING", limit: extractLimit(normalized) };
+  if (normalized.includes("split") || normalized.includes("quality questionnaire") || normalized.includes("quality-approved")) return { intent: "SPLIT_AWARD", metric: "COST" };
+  if (normalized.includes("quality") && (normalized.includes("coverage") || normalized.includes("strongest") || normalized.includes("supplier"))) return { intent: "QUALITY_APPROVED_SUPPLIERS", metric: "QUALITY", limit: extractLimit(normalized) };
+  if (normalized.includes("incomplete") || normalized.includes("coverage")) return { intent: "SUPPLIER_COVERAGE", metric: "COVERAGE" };
+  if (normalized.includes("exception") || normalized.includes("review")) return { intent: "EXCEPTIONS" };
+  if (normalized.includes("difference") || normalized.includes("spread")) return { intent: "PRICE_SPREAD" };
+  if (normalized.includes("lowest") || normalized.includes("cheapest") || normalized.includes("cost")) return { intent: "LOWEST_COMPARABLE_COST", metric: "COST" };
+  return { intent: "UNSUPPORTED" };
 }
 
 function answerQualitySplitAward(dataset: ComparisonDataset): AnalystAnswer {
@@ -125,6 +160,53 @@ function answerCoverage(dataset: ComparisonDataset): AnalystAnswer {
   };
 }
 
+function answerQualityAndCoverage(dataset: ComparisonDataset, limit: number): AnalystAnswer {
+  const coverage = getSupplierCoverage(dataset)
+    .map((item) => ({
+      ...item,
+      qualityStatus: procurementEvent.vendors.find((vendor) => vendor.id === item.vendorId)?.qualityStatus ?? "NOT_EVALUATED"
+    }))
+    .sort((a, b) => {
+      const qualityDelta = qualityRank(b.qualityStatus) - qualityRank(a.qualityStatus);
+      return qualityDelta || b.ready - a.ready;
+    })
+    .slice(0, limit);
+
+  return {
+    title: "Quality and coverage",
+    answer: "Supplier strength is based on existing quality status and quote coverage. The dataset does not include a separate supplier rating score.",
+    metrics: coverage.map((item) => ({ label: item.vendorName, value: `${item.qualityStatus} · ${item.ready}/30 ready` })),
+    evidence: [
+      { label: "Supplier responses", detail: "Coverage is calculated from validated supplier quote cells.", href: "/responses" },
+      { label: "Questionnaire status", detail: "Quality status comes from the RFx questionnaire data.", href: "/responses" }
+    ],
+    actions: [{ label: "Review responses", href: "/responses" }, { label: "View comparison", href: "/comparison" }],
+    caveat: "No separate supplier rating field exists in this RFx dataset."
+  };
+}
+
+function answerUnsupportedSupplierRating(): AnalystAnswer {
+  return {
+    title: "Supplier rating unavailable",
+    answer: "Supplier ratings are not part of this RFx dataset. I can rank suppliers by comparable cost, quote coverage, or quality status instead.",
+    metrics: [],
+    evidence: [{ label: "Available supplier fields", detail: "The vendor data includes quality status and quote coverage, but no rating score.", href: "/responses" }],
+    actions: [{ label: "Compare suppliers", href: "/comparison" }, { label: "Review supplier coverage", href: "/responses" }],
+    caveat: "I did not substitute price or coverage for rating because that would overstate the data."
+  };
+}
+
+function answerUnsupported(): AnalystAnswer {
+  return {
+    title: "Analysis not available",
+    answer: "I couldn't confidently map that question to an available procurement analysis.",
+    metrics: [],
+    evidence: [{ label: "Supported analyses", detail: "Available analyses include cost, coverage, exceptions, price spread, quality status, and split-award scenarios.", href: "/analyst" }],
+    actions: [{ label: "View comparison", href: "/comparison" }, { label: "Review exceptions", href: "/exceptions" }],
+    caveat: "Try asking about lowest comparable cost, incomplete quotes, quality-approved split award, price differences, or review priorities."
+  };
+}
+
 function answerExceptions(dataset: ComparisonDataset): AnalystAnswer {
   const exceptions = getLargestExceptions(dataset);
   const top = exceptions.slice(0, 3);
@@ -158,4 +240,16 @@ function answerPriceSpread(dataset: ComparisonDataset): AnalystAnswer {
 
 function severityRank(severity: "LOW" | "MEDIUM" | "HIGH") {
   return severity === "HIGH" ? 3 : severity === "MEDIUM" ? 2 : 1;
+}
+
+function qualityRank(status: string) {
+  if (status === "PASS") return 4;
+  if (status === "INCOMPLETE") return 3;
+  if (status === "NOT_EVALUATED") return 2;
+  return 1;
+}
+
+function extractLimit(question: string) {
+  const match = question.match(/\btop\s+(\d+)\b/);
+  return match ? Number(match[1]) : 5;
 }

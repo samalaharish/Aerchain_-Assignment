@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { answerProcurementAnalystQuestion } from "@/lib/domain/ai-analyst";
 import { answerAnalystQuestion, getLargestExceptions, getSupplierCoverage } from "@/lib/domain/analyst-tools";
 import { buildComparisonDataset, type ComparisonDataset } from "@/lib/domain/comparison";
@@ -7,6 +7,10 @@ import { procurementEvent } from "@/lib/fixtures/procurement-event";
 import { runFixtureExtractionWorkflow } from "@/lib/extraction/workflow";
 import { MemoryExtractionCache } from "@/lib/extraction/cache";
 import { MemoryExtractionRunStore } from "@/lib/extraction/run-store";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe("analyst deterministic tools", () => {
   it("returns supplier coverage from comparison data", async () => {
@@ -57,6 +61,64 @@ describe("analyst deterministic tools", () => {
 
     expect(coverage.title).toBe("Supplier coverage");
     expect(exceptions.title).toBe("Review priorities");
+  });
+
+  it("routes common analyst questions to the matching deterministic tool instead of the default answer", async () => {
+    const dataset = await datasetFromDemoExtractions();
+
+    expect(answerAnalystQuestion(dataset, "Who has the lowest comparable cost?").title).toBe("Lowest comparable cost");
+    expect(answerAnalystQuestion(dataset, "Which suppliers have incomplete quotes?").title).toBe("Supplier coverage");
+    expect(answerAnalystQuestion(dataset, "Which lines have the largest price differences?").title).toBe("Largest price differences");
+    expect(answerAnalystQuestion(dataset, "Which suppliers are strongest on quality and coverage?").title).toBe("Quality and coverage");
+  });
+
+  it("does not silently substitute lowest cost for unsupported supplier rating questions", async () => {
+    const dataset = await datasetFromDemoExtractions();
+    const answer = answerAnalystQuestion(dataset, "Name top 5 suppliers based on their rating");
+
+    expect(answer.title).toBe("Supplier rating unavailable");
+    expect(answer.answer).toContain("Supplier ratings are not part of this RFx dataset");
+  });
+
+  it("does not silently default unknown questions to lowest comparable cost", async () => {
+    const dataset = await datasetFromDemoExtractions();
+    const answer = answerAnalystQuestion(dataset, "Can you tell me the weather at each supplier factory?");
+
+    expect(answer.title).toBe("Analysis not available");
+    expect(answer.title).not.toBe("Lowest comparable cost");
+  });
+
+  it("passes the selected deterministic tool result to the OpenAI explanation step", async () => {
+    const dataset = await datasetFromDemoExtractions();
+    const explanationPayloads: Record<string, unknown>[] = [];
+    let callCount = 0;
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => {
+      callCount += 1;
+      const body = JSON.parse(String(init?.body)) as { messages: Array<{ content: string }> };
+      if (callCount === 1) {
+        return new Response(JSON.stringify({
+          choices: [{ message: { content: JSON.stringify({ intent: "SUPPLIER_COVERAGE", metric: "COVERAGE", limit: 5 }) } }]
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+
+      explanationPayloads.push(JSON.parse(body.messages[1].content) as Record<string, unknown>);
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: JSON.stringify({ title: "Coverage explained", answer: "Coverage uses the selected supplier coverage tool.", caveat: null }) } }]
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+
+    const answer = await answerProcurementAnalystQuestion({
+      dataset,
+      question: "Which suppliers have incomplete quotes?",
+      env: { ANALYST_PROVIDER: "openai", OPENAI_API_KEY: "test-key", OPENAI_ANALYST_MODEL: "test-model" }
+    });
+
+    expect(answer.mode).toBe("openai");
+    expect(answer.title).toBe("Coverage explained");
+    const explanationPayload = explanationPayloads[0];
+    expect(explanationPayload?.deterministicAnswer).toMatchObject({ title: "Supplier coverage" });
+    expect(explanationPayload?.toolSummary).toMatchObject({ selectedPlan: { intent: "SUPPLIER_COVERAGE" } });
   });
 });
 

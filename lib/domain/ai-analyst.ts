@@ -1,4 +1,5 @@
-import { answerAnalystQuestion, type AnalystAnswer } from "@/lib/domain/analyst-tools";
+import { z } from "zod";
+import { answerAnalystPlan, planAnalystQuestionDeterministically, type AnalystAnswer, type AnalystPlan } from "@/lib/domain/analyst-tools";
 import type { ComparisonDataset } from "@/lib/domain/comparison";
 import { calculateScenarios } from "@/lib/domain/scenarios";
 
@@ -16,8 +17,12 @@ export async function answerProcurementAnalystQuestion(input: {
   env?: Record<string, string | undefined>;
 }): Promise<AiAnalystAnswer> {
   const env = input.env ?? process.env;
-  const deterministic = answerAnalystQuestion(input.dataset, input.question);
-  const toolSummary = buildToolSummary(input.dataset, input.question, deterministic);
+  const model = env.OPENAI_ANALYST_MODEL ?? env.OPENAI_MODEL ?? "gpt-4o-mini";
+  const plan = env.ANALYST_PROVIDER === "openai" && env.OPENAI_API_KEY
+    ? await planWithOpenAi(input.question, model, env.OPENAI_API_KEY)
+    : planAnalystQuestionDeterministically(input.question);
+  const deterministic = answerAnalystPlan(input.dataset, plan);
+  const toolSummary = buildToolSummary(input.dataset, input.question, deterministic, plan);
 
   if (env.ANALYST_PROVIDER !== "openai" || !env.OPENAI_API_KEY) {
     return {
@@ -28,7 +33,6 @@ export async function answerProcurementAnalystQuestion(input: {
     };
   }
 
-  const model = env.OPENAI_ANALYST_MODEL ?? env.OPENAI_MODEL ?? "gpt-4o-mini";
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -81,11 +85,67 @@ export async function answerProcurementAnalystQuestion(input: {
   };
 }
 
-function buildToolSummary(dataset: ComparisonDataset, question: string, answer: AnalystAnswer): Record<string, unknown> {
+const analystPlanSchema = z.object({
+  intent: z.enum([
+    "SUPPLIER_COVERAGE",
+    "LOWEST_COMPARABLE_COST",
+    "PRICE_SPREAD",
+    "EXCEPTIONS",
+    "QUALITY_APPROVED_SUPPLIERS",
+    "SPLIT_AWARD",
+    "SCENARIO_ANALYSIS",
+    "SUPPLIER_RANKING",
+    "UNSUPPORTED"
+  ]),
+  metric: z.enum(["RATING", "COST", "COVERAGE", "QUALITY"]).nullable().optional(),
+  limit: z.number().int().positive().max(10).nullable().optional()
+});
+
+async function planWithOpenAi(question: string, model: string, apiKey: string): Promise<AnalystPlan> {
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model,
+      temperature: 0,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content: [
+            "Classify the buyer's procurement question into one allowed intent.",
+            "Allowed intents: SUPPLIER_COVERAGE, LOWEST_COMPARABLE_COST, PRICE_SPREAD, EXCEPTIONS, QUALITY_APPROVED_SUPPLIERS, SPLIT_AWARD, SCENARIO_ANALYSIS, SUPPLIER_RANKING, UNSUPPORTED.",
+            "Use SUPPLIER_RANKING with metric RATING only when the user explicitly asks for rating.",
+            "If the requested analysis is not one of the allowed intents, return UNSUPPORTED.",
+            "Return only JSON with intent, metric, and limit."
+          ].join(" ")
+        },
+        { role: "user", content: question }
+      ]
+    })
+  });
+
+  if (!response.ok) return planAnalystQuestionDeterministically(question);
+  const payload = await response.json() as { choices?: Array<{ message?: { content?: string | null } }> };
+  const content = payload.choices?.[0]?.message?.content;
+  if (!content) return planAnalystQuestionDeterministically(question);
+  try {
+    const parsed = analystPlanSchema.safeParse(JSON.parse(content));
+    return parsed.success ? parsed.data : planAnalystQuestionDeterministically(question);
+  } catch {
+    return planAnalystQuestionDeterministically(question);
+  }
+}
+
+function buildToolSummary(dataset: ComparisonDataset, question: string, answer: AnalystAnswer, plan: AnalystPlan): Record<string, unknown> {
   const scenarios = calculateScenarios(dataset);
   const splitQuality = scenarios.find((scenario) => scenario.goal === "QUALITY_APPROVED_ONLY");
   return {
     question,
+    selectedPlan: plan,
     metrics: dataset.metrics,
     selectedDeterministicAnswer: answer.title,
     scenarios: scenarios.map((scenario) => ({

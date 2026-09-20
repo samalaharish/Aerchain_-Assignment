@@ -63,6 +63,7 @@ const suggestedQuestions = [
   "Which suppliers have incomplete quotes?",
   "What if we split the award by line, but only among vendors that passed the quality questionnaire?",
   "Which lines have the largest price differences?",
+  "Which suppliers are strongest on quality and coverage?",
   "What should I review before making a decision?"
 ];
 
@@ -305,5 +306,6 @@ function shortLabel(question: string) {
   if (question.startsWith("Which suppliers")) return "Incomplete quotes";
   if (question.startsWith("What if we split")) return "Quality-filtered split award";
   if (question.startsWith("Which lines")) return "Largest price differences";
+  if (question.startsWith("Which suppliers are strongest")) return "Quality and coverage";
   return "What should I review?";
 }
