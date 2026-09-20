@@ -4,12 +4,14 @@ import { answerAnalystQuestion, getLargestExceptions, getSupplierCoverage } from
 import { buildComparisonDataset, type ComparisonDataset } from "@/lib/domain/comparison";
 import { calculateScenario, calculateScenarios, defaultGoals } from "@/lib/domain/scenarios";
 import { procurementEvent } from "@/lib/fixtures/procurement-event";
+import { buildDemoComparisonDataset, clearDemoComparisonDatasetCache } from "@/lib/extraction/comparison-source";
 import { runFixtureExtractionWorkflow } from "@/lib/extraction/workflow";
 import { MemoryExtractionCache } from "@/lib/extraction/cache";
 import { MemoryExtractionRunStore } from "@/lib/extraction/run-store";
 
 afterEach(() => {
   vi.restoreAllMocks();
+  clearDemoComparisonDatasetCache();
 });
 
 describe("analyst deterministic tools", () => {
@@ -19,6 +21,19 @@ describe("analyst deterministic tools", () => {
 
     expect(coverage).toHaveLength(5);
     expect(coverage.find((item) => item.vendorId === "vendor-d")?.notQuoted).toBeGreaterThan(0);
+  });
+
+  it("calculates supplier coverage from the same comparison dataset used by the app", async () => {
+    const dataset = await buildDemoComparisonDataset();
+    const coverage = getSupplierCoverage(dataset);
+
+    expect(coverage.map((item) => [item.vendorName, item.quoted])).toEqual([
+      ["Alpha Packwell", 30],
+      ["Bharat Corrugates", 27],
+      ["CartonCraft Works", 30],
+      ["Delta Fibreboard", 29],
+      ["Eastern Box Makers", 30]
+    ]);
   });
 
   it("returns exception priorities with evidence-backed context", async () => {
