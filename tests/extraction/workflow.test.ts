@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createExtractionCacheKey, EXTRACTION_PROMPT_VERSION, EXTRACTION_SCHEMA_VERSION, MemoryExtractionCache } from "@/lib/extraction/cache";
 import { decideExtractionPath } from "@/lib/extraction/escalation";
 import { buildQuoteExtractionPrompt } from "@/lib/extraction/prompt";
@@ -57,6 +57,31 @@ describe("extraction workflow", () => {
     expect(result.extraction?.lineItems.find((line) => line.rfxLineId === "line-01")?.status).toBe("QUOTED");
     expect(runStore.runs[0].status).toBe("EXTRACTED");
     expect(runStore.runs[0].provider).toBeNull();
+  });
+
+  it("records deterministic production runs in Supabase when configured", async () => {
+    const originalUrl = process.env.SUPABASE_URL;
+    const originalKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const requests: string[] = [];
+
+    process.env.SUPABASE_URL = "https://supabase.example.test";
+    process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-test-key";
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      requests.push(String(input));
+      return new Response("", { status: 200 });
+    }));
+
+    try {
+      const result = await runFixtureExtractionWorkflow("doc-a");
+
+      expect(result.path).toBe("DETERMINISTIC");
+      expect(result.status).toBe("EXTRACTED");
+      expect(requests.some((url) => url.includes("/rest/v1/extraction_runs"))).toBe(true);
+    } finally {
+      restoreOptionalEnv("SUPABASE_URL", originalUrl);
+      restoreOptionalEnv("SUPABASE_SERVICE_ROLE_KEY", originalKey);
+      vi.unstubAllGlobals();
+    }
   });
 
   it("uses a mocked provider for messy AI extraction without calling Gemini", async () => {
@@ -261,6 +286,10 @@ function mockProvider(): QuoteExtractionProvider {
 }
 
 function restoreEnv(key: "EXTRACTION_PROVIDER" | "GEMINI_API_KEY", value: string | undefined) {
+  restoreOptionalEnv(key, value);
+}
+
+function restoreOptionalEnv(key: string, value: string | undefined) {
   if (value === undefined) {
     delete process.env[key];
   } else {

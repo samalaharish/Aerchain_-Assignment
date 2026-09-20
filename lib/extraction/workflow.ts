@@ -107,6 +107,7 @@ export async function extractFromParsedDocument(input: {
 
   if (decision.path === "DETERMINISTIC") {
     const completedAt = new Date().toISOString();
+    const runStore = input.runStore ?? createSupabaseExtractionRunStore() ?? defaultRunStore;
     const extraction = validateVendorQuoteExtraction(
       extractStructuredQuoteDeterministically({ event: procurementEvent, vendor, parsedDocument: input.parsedDocument }),
       validLineIds
@@ -123,7 +124,7 @@ export async function extractFromParsedDocument(input: {
     } catch (error) {
       console.warn("Supabase deterministic extraction persistence failed.", error);
     }
-    return recordAndReturn(input.runStore, {
+    return recordAndReturn(runStore, {
       documentId: input.parsedDocument.documentId,
       vendorId: vendor.id,
       status: "EXTRACTED",
