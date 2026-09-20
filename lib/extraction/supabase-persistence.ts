@@ -103,7 +103,24 @@ async function persistEvidence(client: SupabaseServerClient, extraction: VendorQ
       rows.push(evidenceRow(extraction, evidence, term.type, term.confidence));
     }
   }
-  if (rows.length > 0) await client.upsertRows("evidence", rows);
+  const dedupedRows = dedupeRowsByConflictKey(rows, "id");
+  if (dedupedRows.length > 0) await client.upsertRows("evidence", dedupedRows);
+}
+
+export function dedupeRowsByConflictKey(rows: Record<string, unknown>[], conflictKey: string): Record<string, unknown>[] {
+  const byKey = new Map<unknown, Record<string, unknown>>();
+  for (const row of rows) {
+    const key = row[conflictKey];
+    if (key === undefined || key === null) {
+      byKey.set(Symbol(), row);
+      continue;
+    }
+    const existing = byKey.get(key);
+    if (!existing || rowCompleteness(row) >= rowCompleteness(existing)) {
+      byKey.set(key, row);
+    }
+  }
+  return Array.from(byKey.values());
 }
 
 function evidenceRow(extraction: VendorQuoteExtraction, evidence: ExtractionEvidence, entityId: string, confidence: string): Record<string, unknown> {
@@ -131,4 +148,8 @@ function hashText(value: string): string {
     hash = ((hash << 5) - hash + value.charCodeAt(index)) | 0;
   }
   return Math.abs(hash).toString(16);
+}
+
+function rowCompleteness(row: Record<string, unknown>): number {
+  return Object.values(row).filter((value) => value !== undefined && value !== null && value !== "").length;
 }
