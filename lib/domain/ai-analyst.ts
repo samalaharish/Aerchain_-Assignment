@@ -141,6 +141,9 @@ async function planWithOpenAi(question: string, history: string[], model: string
             "Return only JSON with goal, dataNeeded, tools, constraints, unsupportedReason.",
             "Do not invent facts. Do not calculate numbers.",
             "Use ratingAvailability when the user asks for supplier rating because the tool will verify whether rating exists.",
+            "Questions about the most trusted supplier, supplier trust, reputation, ratings, scores, or rankings require an explicit trust/rating field.",
+            "Do not substitute quality status, quote coverage, cost, or exceptions for trust/rating unless the buyer explicitly asks to use that metric as a proxy.",
+            "For trust/rating/reputation requests, select ratingAvailability to verify whether that data exists.",
             "If no available tool can answer the question, return no tools and set unsupportedReason."
           ].join(" ")
         },

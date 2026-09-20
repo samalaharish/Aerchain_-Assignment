@@ -154,6 +154,51 @@ describe("analyst deterministic tools", () => {
     expect(explanationPayload?.toolSummary).toMatchObject({ selectedPlan: { tools: [{ name: "supplierCoverage" }] } });
   });
 
+  it("does not let OpenAI substitute quality or coverage for trust/rating questions", async () => {
+    const dataset = await datasetFromDemoExtractions();
+    const plannerPrompts: string[] = [];
+    const explanationPayloads: Record<string, unknown>[] = [];
+    let callCount = 0;
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => {
+      callCount += 1;
+      const body = JSON.parse(String(init?.body)) as { messages: Array<{ role: string; content: string }> };
+      if (callCount === 1) {
+        plannerPrompts.push(body.messages[0].content);
+        return new Response(JSON.stringify({
+          choices: [{ message: { content: JSON.stringify({
+            goal: "verify supplier trust data availability",
+            dataNeeded: ["supplier_rating_availability"],
+            tools: [{ name: "ratingAvailability", arguments: {} }],
+            constraints: ["do not substitute quality or coverage for trust"]
+          }) } }]
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+
+      explanationPayloads.push(JSON.parse(body.messages[1].content) as Record<string, unknown>);
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: JSON.stringify({
+          title: "Supplier trust data unavailable",
+          answer: "Supplier trust or rating data is not present in this RFx dataset, so I cannot name a most trusted supplier without inventing a score.",
+          caveat: "I did not substitute coverage or quality for trust."
+        }) } }]
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+
+    const answer = await answerProcurementAnalystQuestion({
+      dataset,
+      question: "Who is the most trusted supplier?",
+      env: { ANALYST_PROVIDER: "openai", OPENAI_API_KEY: "test-key", OPENAI_ANALYST_MODEL: "test-model" }
+    });
+
+    expect(plannerPrompts[0]).toContain("most trusted supplier");
+    expect(plannerPrompts[0]).toContain("Do not substitute quality status, quote coverage, cost, or exceptions for trust/rating");
+    expect(answer.toolSummary.selectedPlan).toMatchObject({ tools: [{ name: "ratingAvailability" }] });
+    expect(explanationPayloads[0]?.toolResults).toMatchObject([{ toolName: "ratingAvailability" }]);
+    expect(JSON.stringify(explanationPayloads[0])).not.toContain("qualityAndCoverage");
+    expect(answer.title).toBe("Supplier trust data unavailable");
+  });
+
   it("lets the planner select multiple tools for broad procurement questions", async () => {
     const dataset = await datasetFromDemoExtractions();
     const answer = await answerProcurementAnalystQuestion({

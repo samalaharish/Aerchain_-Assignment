@@ -1,6 +1,6 @@
 /** @type {import('next').NextConfig} */
 const vendorResponseFixtures = ["./fixtures/vendor-responses/**/*"];
-const pdfJsServerRuntimeAssets = ["./runtime/pdfjs/pdf.worker.mjs"];
+const pdfJsServerRuntimeAssets = ["./runtime/pdfjs/pdf.worker.mjs", "./runtime/pdfjs/standard_fonts/**/*"];
 const procurementWorkflowAssets = [...vendorResponseFixtures, ...pdfJsServerRuntimeAssets];
 
 const nextConfig = {

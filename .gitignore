@@ -5,6 +5,7 @@ dist/
 coverage/
 .cache/
 runtime/pdfjs/pdf.worker.mjs
+runtime/pdfjs/standard_fonts/
 *.tsbuildinfo
 .env
 .env*.local
