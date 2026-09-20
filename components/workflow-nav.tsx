@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { BarChart3, Bot, CheckCircle2, FileWarning, GitCompare, Inbox, LineChart } from "lucide-react";
 import { clsx } from "clsx";
+import { DemoResetButton } from "@/components/demo-reset-button";
 
 const workflowItems = [
   { href: "/dashboard", label: "Overview", icon: BarChart3 },
@@ -40,10 +41,17 @@ export function WorkflowNav({ statusLabel, providerLabel }: WorkflowNavProps) {
             <div className="text-lg font-semibold text-ink">Aerchain</div>
             <div className="text-sm font-medium text-muted">Corrugated Packaging RFx · 5 suppliers · 30 lines</div>
           </div>
-          <div className="hidden items-center gap-2 md:flex">
-            <span className="rounded-md border border-line bg-panel px-3 py-2 text-xs font-semibold text-muted">{statusLabel}</span>
-            <span className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">{providerLabel}</span>
+          <div className="flex items-center gap-2">
+            <div className="hidden items-center gap-2 md:flex">
+              <span className="rounded-md border border-line bg-panel px-3 py-2 text-xs font-semibold text-muted">{statusLabel}</span>
+              <span className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">{providerLabel}</span>
+            </div>
+            <DemoResetButton />
           </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 md:hidden">
+          <span className="rounded-md border border-line bg-panel px-3 py-2 text-xs font-semibold text-muted">{statusLabel}</span>
+          <span className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">{providerLabel}</span>
         </div>
         <div className="flex gap-2 overflow-x-auto pb-1">
           {workflowItems.map((item) => {

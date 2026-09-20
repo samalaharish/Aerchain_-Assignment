@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { Bot, Send, UserRound } from "lucide-react";
 import { StatusBadge } from "@/components/status-badge";
+import { getAnalystDisplay, type AnalystDisplayToolSummary } from "@/lib/analyst/display";
 
 type AnalystMetric = {
   label: string;
@@ -30,6 +31,7 @@ type AnalystResponse = {
   actions: AnalystAction[];
   mode: "deterministic" | "openai";
   model: string | null;
+  toolSummary?: AnalystDisplayToolSummary;
 };
 
 type ChatMessage =
@@ -247,6 +249,8 @@ function MessageCard({ message, onRetry }: { message: ChatMessage; onRetry: (que
 }
 
 function AnalystAnswerCard({ response }: { response: AnalystResponse }) {
+  const display = getAnalystDisplay(response);
+
   return (
     <div className="flex items-start gap-3 rounded-md border border-line bg-white p-4">
       <Bot className="mt-1 h-5 w-5 text-accent" aria-hidden="true" />
@@ -264,45 +268,54 @@ function AnalystAnswerCard({ response }: { response: AnalystResponse }) {
         <p className="mt-2 text-sm leading-6 text-muted">{response.answer}</p>
         {response.caveat && <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">{response.caveat}</p>}
 
-        {response.metrics.length > 0 && (
-          <div className="mt-4 grid gap-3 md:grid-cols-3">
-            {response.metrics.map((metric) => (
-              <div key={metric.label} className="rounded-md border border-line bg-panel p-3">
-                <div className="text-xs font-semibold uppercase tracking-wide text-muted">{metric.label}</div>
-                <div className="mt-1 text-base font-semibold">{metric.value}</div>
-              </div>
-            ))}
+        {display.showMetrics && (
+          <div className="mt-4 overflow-hidden rounded-md border border-line">
+            <table className="min-w-full divide-y divide-line text-sm">
+              <tbody className="divide-y divide-line bg-panel">
+                {response.metrics.map((metric) => (
+                  <tr key={metric.label}>
+                    <td className="w-1/2 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted">{metric.label}</td>
+                    <td className="px-3 py-2 font-semibold text-ink">{metric.value}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
 
-        <div className="mt-4 grid gap-4 lg:grid-cols-2">
-          {response.evidence.length > 0 && (
-            <div>
-              <h4 className="text-sm font-semibold">Evidence</h4>
-              <div className="mt-2 space-y-2">
-                {response.evidence.map((item) => (
-                  <Link key={`${item.label}-${item.href}`} href={item.href} className="block rounded-md border border-line bg-panel p-3 hover:border-accent">
-                    <div className="text-sm font-semibold">{item.label}</div>
-                    <div className="mt-1 text-xs text-muted">{item.detail}</div>
-                  </Link>
-                ))}
-              </div>
-            </div>
-          )}
+        {display.showSecondaryDetails && (
+          <details className="mt-4 rounded-md border border-line bg-panel p-3">
+            <summary className="cursor-pointer text-sm font-semibold text-muted">Evidence and related views</summary>
+            <div className="mt-3 grid gap-4 lg:grid-cols-2">
+              {response.evidence.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-semibold">Evidence</h4>
+                  <div className="mt-2 space-y-2">
+                    {response.evidence.map((item) => (
+                      <Link key={`${item.label}-${item.href}`} href={item.href} className="block rounded-md border border-line bg-white p-3 hover:border-accent">
+                        <div className="text-sm font-semibold">{item.label}</div>
+                        <div className="mt-1 text-xs text-muted">{item.detail}</div>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              )}
 
-          {response.actions.length > 0 && (
-            <div>
-              <h4 className="text-sm font-semibold">Next actions</h4>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {response.actions.map((action) => (
-                  <Link key={action.href} href={action.href} className="rounded-md bg-accent px-3 py-2 text-sm font-semibold text-white hover:bg-teal-800">
-                    {action.label}
-                  </Link>
-                ))}
-              </div>
+              {response.actions.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-semibold">Related views</h4>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {response.actions.map((action) => (
+                      <Link key={action.href} href={action.href} className="rounded-md border border-line bg-white px-3 py-2 text-sm font-semibold text-muted hover:border-accent hover:text-accent">
+                        {action.label}
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          </details>
+        )}
       </div>
     </div>
   );

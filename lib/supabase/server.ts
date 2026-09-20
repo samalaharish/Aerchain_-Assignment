@@ -4,6 +4,7 @@ export type SupabaseServerClient = {
   isConfigured: true;
   getState<T>(key: string): Promise<T | null>;
   upsertState<T>(key: string, value: T): Promise<void>;
+  deleteState(key: string): Promise<void>;
   upsertRows(table: string, rows: Record<string, unknown> | Record<string, unknown>[], onConflict?: string): Promise<void>;
   selectRows<T>(table: string, query: string): Promise<T[]>;
 };
@@ -52,6 +53,11 @@ export function getSupabaseServerClient(env: SupabaseEnv = process.env): Supabas
           value,
           updated_at: new Date().toISOString()
         })
+      });
+    },
+    async deleteState(stateKey: string): Promise<void> {
+      await request(`app_state?key=eq.${encodeURIComponent(stateKey)}`, {
+        method: "DELETE"
       });
     },
     async upsertRows(table: string, rows: Record<string, unknown> | Record<string, unknown>[], onConflict = "id"): Promise<void> {
