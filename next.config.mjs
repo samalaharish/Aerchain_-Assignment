@@ -12,6 +12,8 @@ const nextConfig = {
       "/responses": procurementWorkflowAssets,
       "/responses/[documentId]": procurementWorkflowAssets,
       "/api/extractions/[documentId]/run": procurementWorkflowAssets,
+      "/api/analyst": procurementWorkflowAssets,
+      "/api/decision": procurementWorkflowAssets,
       "/comparison": procurementWorkflowAssets,
       "/exceptions": procurementWorkflowAssets,
       "/analyst": procurementWorkflowAssets,

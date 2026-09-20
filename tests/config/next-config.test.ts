@@ -20,6 +20,8 @@ describe("Next production file tracing", () => {
     expect(includes?.["/responses"]).toContain("./fixtures/vendor-responses/**/*");
     expect(includes?.["/responses/[documentId]"]).toContain("./fixtures/vendor-responses/**/*");
     expect(includes?.["/api/extractions/[documentId]/run"]).toContain("./fixtures/vendor-responses/**/*");
+    expect(includes?.["/api/analyst"]).toContain("./fixtures/vendor-responses/**/*");
+    expect(includes?.["/api/decision"]).toContain("./fixtures/vendor-responses/**/*");
   });
 
   it("bundles the PDF.js worker required by server-side PDF parsing", async () => {
@@ -35,6 +37,8 @@ describe("Next production file tracing", () => {
     expect(includes?.["/responses"]).toContain(expectedWorkerGlob);
     expect(includes?.["/comparison"]).toContain(expectedWorkerGlob);
     expect(includes?.["/api/extractions/[documentId]/run"]).toContain(expectedWorkerGlob);
+    expect(includes?.["/api/analyst"]).toContain(expectedWorkerGlob);
+    expect(includes?.["/api/decision"]).toContain(expectedWorkerGlob);
     expect(JSON.stringify(includes)).not.toContain("node_modules/.pnpm/pdfjs-dist");
     expect(JSON.stringify(includes)).not.toContain("node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs");
   });
